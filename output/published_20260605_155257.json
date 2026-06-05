@@ -1,0 +1,10 @@
+{
+  "published_at": "2026-06-05T15:52:57.005497",
+  "content_file": "/home/azureuser/social-media-automation/output/content_20260605_155138.json",
+  "results": {
+    "instagram": true,
+    "linkedin": true,
+    "youtube": true,
+    "facebook": true
+  }
+}

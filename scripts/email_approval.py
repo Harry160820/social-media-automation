@@ -98,22 +98,32 @@ def send_approval_email(content, content_id):
         return False
 
 def main():
-    # Load latest generated content
+    print("Starting email approval script...")
+    
     output_dir = "/home/azureuser/social-media-automation/output"
-    files = sorted(os.listdir(output_dir))
+    
+    # List all files
+    all_files = os.listdir(output_dir)
+    print(f"All files in output: {all_files}")
+    
+    # Only get content files
+    files = sorted([f for f in all_files if f.startswith('content_')])
+    print(f"Content files found: {files}")
     
     if not files:
-        print("No content files found")
+        print("No content files found!")
         return
     
     latest_file = files[-1]
     content_id = latest_file.replace(".json", "")
+    print(f"Using file: {latest_file}")
     
     with open(f"{output_dir}/{latest_file}", "r") as f:
         content = json.load(f)
     
+    print(f"Content loaded: {list(content.keys())}")
     print(f"Sending approval email for: {content_id}")
     send_approval_email(content, content_id)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
