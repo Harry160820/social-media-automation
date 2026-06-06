@@ -1,0 +1,24 @@
+name: Deploy to Azure VM
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Deploy to Azure VM
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USERNAME }}
+        password: ${{ secrets.VM_PASSWORD }}
+        script: |
+          cd /home/azureuser/social-media-automation
+          git pull origin main
+          pip3 install -r requirements.txt --break-system-packages
+          echo " Deployment complete!"
