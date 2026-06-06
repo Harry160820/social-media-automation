@@ -1,0 +1,310 @@
+import os
+import json
+import smtplib
+from datetime import datetime, timedelta
+from pymongo import MongoClient
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.lib.colors import HexColor
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib import colors
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+from dotenv import load_dotenv
+import requests
+
+load_dotenv('/home/azureuser/social-media-automation/.env')
+
+# MongoDB
+client = MongoClient(os.getenv('MONGODB_URI'))
+db = client['social_media_db']
+
+# Ollama
+OLLAMA_URL = "http://localhost:11434/api/generate"
+MODEL = "llama3"
+
+# Dirs
+OUTPUT_DIR = "/home/azureuser/social-media-automation/output"
+REPORTS_DIR = "/home/azureuser/social-media-automation/reports"
+os.makedirs(REPORTS_DIR, exist_ok=True)
+
+def get_monthly_stats():
+    """Get stats from MongoDB for current month"""
+    print("Fetching monthly stats...")
+    
+    # Get published posts count
+    published = list(db['published_posts'].find())
+    
+    # Get competitor insights
+    insights = list(db['competitor_insights'].find().sort(
+        "analyzed_at", -1).limit(4))
+    
+    # Get content files from output dir
+    content_files = [f for f in os.listdir(OUTPUT_DIR) 
+                    if f.startswith('content_')]
+    
+    stats = {
+        "total_content_generated": len(content_files),
+        "total_published": len(published),
+        "competitor_analyses": len(insights),
+        "month": datetime.now().strftime("%B %Y"),
+        "platforms": ["Instagram", "LinkedIn", "YouTube", "Facebook"]
+    }
+    
+    print(f"Stats collected: {stats}")
+    return stats, insights
+
+def generate_strategy_with_llama(stats, insights):
+    """Use LLaMA to generate strategy recommendations"""
+    print("\nGenerating strategy with LLaMA 3..."
+    # Get latest competitor insights
+    latest_insights = insights[0].get('insights', {}) if insights else {}
+    
+    prompt = f"""Based on this monthly social media performance data, generate a strategy repor
+
+    response = requests.post(OLLAMA_URL, json={
+        "model": MODEL,
+        "prompt": prompt,
+        "stream": False,
+        "options": {"temperature": 0.4}
+    })
+    
+    if response.status_code == 200:
+        raw = response.json()["response"]
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        try:
+            strategy = json.loads(raw[start:end])
+            print("Strategy generated!")
+            return strategy
+        except:
+            return {"executive_summary": raw[:500]}
+    return None
+
+def generate_pdf_report(stats, strategy):
+    """Generate professional PDF report"""
+    print("\nGenerating PDF report...")
+    
+    timestamp = datetime.now().strftime("%Y%m")
+    filename = f"{REPORTS_DIR}/monthly_report_{timestamp}.pdf"
+    
+    doc = SimpleDocTemplate(
+        filename,
+        pagesize=letter,
+        rightMargin=72,
+        leftMargin=72,
+        topMargin=72,
+        bottomMargin=72
+    )
+    
+    styles = getSampleStyleSheet()
+    
+    # Custom styles
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Title'],
+        fontSize=24,
+        textColor=HexColor('#6366F1'),
+        spaceAfter=20
+    )
+    
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading1'],
+        fontSize=14,
+        textColor=HexColor('#1A1A2E'),
+        spaceAfter=10,
+        spaceBefore=20
+    )
+    
+    body_style = ParagraphStyle(
+        'CustomBody',
+        parent=styles['Normal'],
+        fontSize=11,
+        spaceAfter=8,
+        leading=16
+    )
+    
+    # Build content
+    story = []
+    
+    # Title
+    story.append(Paragraph(
+        f"Monthly Social Media Report", title_style))
+    story.append(Paragraph(
+        f"{stats['month']} — Social Media Automation System", 
+        styles['Normal']))
+    story.append(Spacer(1, 20))
+    
+    # Executive Summary
+    story.append(Paragraph("Executive Summary", heading_style))
+    story.append(Paragraph(
+        strategy.get('executive_summary', 'N/A'), body_style))
+    story.append(Spacer(1, 10))
+    
+    # Stats Table
+    story.append(Paragraph("Monthly Performance", heading_style))
+    
+    table_data = [
+        ['Metric', 'Value'],
+        ['Content Generated', str(stats['total_content_generated'])],
+        ['Posts Published', str(stats['total_published'])],
+        ['Platforms Active', str(len(stats['platforms']))],
+        ['Competitor Analyses', str(stats['competitor_analyses'])],
+    ]
+    
+    table = Table(table_data, colWidths=[3*inch, 3*inch])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), HexColor('#6366F1')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 12),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('GRID', (0,0), (-1,-1), 1, colors.grey),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), 
+         [HexColor('#F8F9FF'), HexColor('#FFFFFF')]),
+        ('FONTSIZE', (0,1), (-1,-1), 11),
+        ('PADDING', (0,0), (-1,-1), 10),
+    ]))
+    
+    story.append(table)
+    story.append(Spacer(1, 20))
+    
+    # Key Achievements
+    story.append(Paragraph("Key Achievements", heading_style))
+    for achievement in strategy.get('key_achievements', []):
+        story.append(Paragraph(f"{achievement}", body_style))
+    
+    # Next Month Strategy
+    story.append(Paragraph("Next Month Strategy", heading_style))
+    for strat in strategy.get('next_month_strategy', []):
+        story.append(Paragraph(f"→ {strat}", body_style))
+    
+    # Content Calendar Topics
+    story.append(Paragraph("Recommended Content Topics", heading_style))
+    for topic in strategy.get('content_calendar_topics', []):
+        story.append(Paragraph(f"• {topic}", body_style))
+    
+    # Competitor Threats
+    story.append(Paragraph("Competitor Threats to Watch", heading_style))
+    for threat in strategy.get('competitor_threats', []):
+        story.append(Paragraph(f"{threat}", body_style))
+    
+    # Footer
+    story.append(Spacer(1, 30))
+    story.append(Paragraph(
+        f"Generated by Social Media Automation System — Hari Om — {datetime.now().strftime('%Y-%m-%d')}",
+        styles['Normal']))
+    
+    # Build PDF
+    doc.build(story)
+    print(f"PDF generated: {filename}")
+    return filename
+
+def send_report_email(pdf_path, stats, strategy):
+    """Send PDF report via email"""
+    print("\nSending report email...")
+    
+    GMAIL_USER = os.getenv('GMAIL_USER')
+    GMAIL_PASSWORD = os.getenv('GMAIL_APP_PASSWORD')
+    APPROVAL_EMAIL = os.getenv('APPROVAL_EMAIL')
+    
+    msg = MIMEMultipart()
+    msg['Subject'] = f"Monthly Report — {stats['month']}"
+    msg['From'] = GMAIL_USER
+    msg['To'] = APPROVAL_EMAIL
+    
+    # Email body
+    body = f"""
+    <html>
+    <body style="font-family: Arial; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #6366F1;">Monthly Social Media Report Ready</h2>
+        <p>Your {stats['month']} report is attached.</p>
+        
+        <h3>Quick Summary:</h3>
+        <ul>
+            <li>Content Generated: {stats['total_content_generated']}</li>
+            <li>Posts Published: {stats['total_published']}</li>
+            <li>Platforms: {', '.join(stats['platforms'])}</li>
+        </ul>
+        
+        <h3>Next Month Focus:</h3>
+        <ul>
+            {''.join([f"<li>{s}</li>" for s in strategy.get('next_month_strategy', [])])}
+        </ul>
+        
+        <p>Full report attached as PDF.</p>
+        <p style="color: #999; font-size: 12px;">Social Media Automation System — Hari Om</p>
+    </body>
+    </html>
+    """
+    
+    msg.attach(MIMEText(body, 'html'))
+    
+    # Attach PDF
+    with open(pdf_path, 'rb') as f:
+        attachment = MIMEBase('application', 'octet-stream')
+        attachment.set_payload(f.read())
+        encoders.encode_base64(attachment)
+        attachment.add_header(
+            'Content-Disposition',
+            f'attachment; filename=monthly_report_{stats["month"]}.pdf'
+        )
+        msg.attach(attachment)
+    
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(GMAIL_USER, GMAIL_PASSWORD)
+        server.sendmail(GMAIL_USER, APPROVAL_EMAIL, msg.as_string())
+        server.quit()
+        print("Report email sent with PDF attachment!")
+        return True
+    except Exception as e:
+        print(f"Email failed: {e}")
+        return False
+
+def save_report_to_mongodb(stats, strategy, pdf_path):
+    """Save report to MongoDB"""
+    doc = {
+        "generated_at": datetime.now().isoformat(),
+        "month": stats['month'],
+        "stats": stats,
+        "strategy": strategy,
+        "pdf_path": pdf_path
+    }
+    result = db['monthly_reports'].insert_one(doc)
+    print(f"Report saved to MongoDB: {result.inserted_id}")
+
+def main():
+    print("="*50)
+    print("MONTHLY REPORT GENERATOR")
+    print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("="*50)
+    
+    # Get stats
+    stats, insights = get_monthly_stats()
+    
+    # Generate strategy
+    strategy = generate_strategy_with_llama(stats, insights)
+    if not strategy:
+        print("Strategy generation failed!")
+        return
+    
+    # Generate PDF
+    pdf_path = generate_pdf_report(stats, strategy)
+    
+    # Save to MongoDB
+    save_report_to_mongodb(stats, strategy, pdf_path)
+    
+    # Send email
+    send_report_email(pdf_path, stats, strategy)
+    
+    print("\Monthly report complete!")
+    client.close()
+
+if __name__ == "__main__":
+    main()
